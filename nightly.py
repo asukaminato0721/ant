@@ -86,6 +86,7 @@ def opam_exec(
 ) -> None:
     """Run a command inside the configured opam switch."""
 
+    run(["opam", "switch", "create", SWITCH])
     run(["opam", "exec", "--switch", SWITCH, "--", *args], env=env, **kwargs)
 
 
