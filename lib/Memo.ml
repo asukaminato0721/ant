@@ -216,10 +216,7 @@ let max_sc_of_children (const : trie Children.t) : int =
   Children.iter const ~f:(fun child -> acc := max !acc (max_sc_of_trie child));
   !acc
 
-let update_branch_max_sc (node : trie) : unit =
-  match node with
-  | Leaf _ -> ()
-  | Branch br -> br.max_sc <- max (max_sc_of_trie_opt br.var) (max_sc_of_children br.const)
+let bump_branch_max_sc (br : branch) (child_max : int) : unit = if child_max > br.max_sc then br.max_sc <- child_max
 
 let make_branch ~(creator : string) ~(degree : int) ~(prefix : Words.words) ~(var : trie option)
     ~(const : trie Children.t) : trie =
@@ -302,23 +299,23 @@ let rec insert_option (x : trie option) (prefix' : Pattern.pattern) (step' : ste
               | Pattern.PCon _ -> failwith "impossible"
               | Pattern.PVar ph ->
                   let pt = if ph = 1 then pt else Pattern.pattern_cons (Pattern.PVar (ph - 1)) pt in
-                  let var = Some (insert_option br.var pt step') in
-                  let br = { br with var } in
-                  update_branch_max_sc (Branch br);
+                  let var = insert_option br.var pt step' in
+                  let br = { br with var = Some var } in
+                  bump_branch_max_sc br (max_sc_of_trie var);
                   ret (Branch br))
             else
               let phh, pht = Words.words_front_exn ph in
               let key = Word.hash phh in
               let pt = if Generic.is_empty pht then pt else Pattern.pattern_cons (Pattern.PCon pht) pt in
-              Children.update br.const key ~f:(fun x -> insert_option x pt step');
-              update_branch_max_sc (Branch br);
+              let updated = insert_option (Children.find br.const key) pt step' in
+              Children.set br.const key updated;
+              bump_branch_max_sc br (max_sc_of_trie updated);
               ret (Branch br))
           else
             let const = Children.create () in
             let brh, brt = Words.words_front_exn br_prefix in
             let brkey = Word.hash brh in
             let br' = { br with prefix = brt; degree = br.degree - Words.degree br.prefix + Words.degree brt } in
-            update_branch_max_sc (Branch br');
             let x = Branch br' in
             Children.set const brkey x;
             if Generic.is_empty ph then
@@ -342,16 +339,15 @@ let rec insert_option (x : trie option) (prefix' : Pattern.pattern) (step' : ste
       | Pattern.PVar ph ->
           let pt = if ph = 1 then pt else Pattern.pattern_cons (Pattern.PVar (ph - 1)) pt in
           if Generic.is_empty br.prefix then (
-            let var = Some (insert_option br.var pt step') in
-            let br = { br with var } in
-            update_branch_max_sc (Branch br);
+            let var = insert_option br.var pt step' in
+            let br = { br with var = Some var } in
+            bump_branch_max_sc br (max_sc_of_trie var);
             ret (Branch br))
           else
             let const = Children.create () in
             let brh, brt = Words.words_front_exn br.prefix in
             let brkey = Word.hash brh in
             let br' = { br with prefix = brt; degree = br.degree - Words.degree br.prefix + Words.degree brt } in
-            update_branch_max_sc (Branch br');
             let x = Branch br' in
             Children.set const brkey x;
             make_branch ~creator:"inserting var case" ~degree:(Pattern.pattern_measure prefix').degree
